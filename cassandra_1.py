@@ -1,3 +1,4 @@
+from logging import NullHandler
 from cassandra.cluster import Cluster
 from cassandra.auth import PlainTextAuthProvider
 
@@ -5,24 +6,39 @@ from cassandra.auth import PlainTextAuthProvider
 # person_2 postcodes <= 50 
 my_keyspaces = ['person_1', 'person_2']
 
+cluster = None
+session = None
 
 def connect_valdas():
+    global cluster
+    global session
+
     auth_provider = PlainTextAuthProvider(username='valdas', password='Valdas123456')
     cluster = Cluster(['20.113.59.203'], auth_provider=auth_provider)
     session = cluster.connect()
 
-    return cluster, session
+def test_run():
+    global session
 
-def test_run(session):
-    session.execute('USE {}'.format(my_keyspaces[0]))
-
-    users = session.execute('SELECT * FROM recommendation')
+    users = session.execute('SELECT * FROM person')
 
     for row in users:
         print(row)
 
 
-if __name__ == "__main__":
-    cluster, session = connect_valdas()
+def change_keyspace(index: int):
+    global session
 
-    test_run(session)
+    session.execute('USE {}'.format(my_keyspaces[index]))
+
+
+if __name__ == "__main__":
+    connect_valdas()
+
+    change_keyspace(0)
+
+    test_run()
+
+    change_keyspace(1)
+
+    test_run()
