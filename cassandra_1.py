@@ -5,10 +5,10 @@ from cassandra.auth import PlainTextAuthProvider
 
 # preson_1 postcodes > 50 
 # person_2 postcodes <= 50 
-my_keyspaces = ['person_1', 'person_2']
-dominykas_keyspaces = ['a50', 'b50']
+valdas_dbvs = { 'user' : 'valdas', 'password' : 'Valdas123456', 'ip_address' : '20.113.59.203','above_keyspace' : 'person_1', 'below_keyspace' : 'person_2'}
+dominykas_dbvs = { 'user' : 'domrap', 'password' : 'Password123*', 'ip_address' : '13.74.59.114','above_keyspace' : 'a50', 'below_keyspace' : 'b50'}
 
-def connectToServer(username, password, ipAddress):
+def connet_to_server(username, password, ipAddress):
     auth_provider = PlainTextAuthProvider(username = username, password = password)
 
     cluster = Cluster([ipAddress], auth_provider=auth_provider)
@@ -122,16 +122,107 @@ def test_col_remove(name, session_v):
     print("removed column")
     print(column)
 
+# -----------------------------------------------------------
+def get_all_rows_from_table (session, table):
+    data = session.execute(f"SELECT * FROM {table}")
+
+    return data
+
+def define_keyspace_d(session_d, departamentName):
+    change_keyspace(session_d, dominykas_dbvs['above_keyspace'])
+    data = session_d.execute(f"SELECT COUNT(*) FROM library WHERE departament = '{departamentName}'")
+    if data[0].count == 0:
+        change_keyspace(session_d, dominykas_dbvs['below_keyspace'])
+
+
+def define_keyspace_v(session_v, personalCode):
+    change_keyspace(session_v, valdas_dbvs['above_keyspace'])
+    data = session_v.execute(f"SELECT COUNT(*) FROM person WHERE personal_code = {personalCode}")
+    if data[0].count == 0:
+        change_keyspace(session_v, valdas_dbvs['below_keyspace'])
+
+
+def insert_takeaway(session_d, session_v, takeaway):
+    tableName = 'takeaway'
+    define_keyspace_d(session_d, takeaway['department'])
+    define_keyspace_v(session_v, takeaway['personalCode'])
+
+    session_d.execute(f"INSERT INTO {tableName} (takeaway_id, copy_id, department, return_date, take_date) VALUES ({takeaway['id']}, {takeaway['copy_id']}, '{takeaway['department']}', '{takeaway['return_date']}', '{takeaway['take_date']}')")
+    session_v.execute(f"INSERT INTO {tableName} (takeaway_id, copy_id, department, return_date, take_date, personal_code) VALUES ({takeaway['id']}, {takeaway['copy_id']}, '{takeaway['department']}', '{takeaway['return_date']}', '{takeaway['take_date']}', {takeaway['personalCode']})")
+
+def update_takeaway(session_d, session_v, takeaway):
+    tableName = 'takeaway'
+    define_keyspace_d(session_d, takeaway['department'])
+    define_keyspace_v(session_v, takeaway['personalCode'])
+
+    session_v.execute(f"UPDATE {tableName} SET copy_id={d_row[1]}, department='{d_row[2]}', return_date=NULL, take_date='{d_row[4]}' WHERE takeaway_id={d_row[0]}")
+
+    session_d.execute(f"UPDATE {tableName} SET copy_id = {takeaway['copy_id']}, department = '{takeaway['department']}', return_date = '{takeaway['return_date']}', take_date) VALUES ({takeaway['id']}, , , , '{takeaway['take_date']}')")
+    session_v.execute(f"INSERT INTO {tableName} (takeaway_id, copy_id, department, return_date, take_date, personal_code) VALUES ({takeaway['id']}, {takeaway['copy_id']}, '{takeaway['department']}', '{takeaway['return_date']}', '{takeaway['take_date']}', {takeaway['personalCode']})")
+
+
+def update_libarary_departmentName(session_d, session_v, oldName, newName):
+    define_keyspace_d(session_d, oldName)
+    data = session_d.execute(f"SELECT * FROM library WHERE departament = '{oldName}'")[0]
+
+    ids = session_d.execute(f"SELECT takeaway_id FROM takeaway WHERE department = '{oldName}' ALLOW FILTERING")
+    session_d.execute(f"DELETE FROM library WHERE departament = '{oldName}'")
+
+    session_d.execute(f"INSERT INTO library (departament, address, post_code ) VALUES ('{newName}', '{data[1]}', '{data[2]}')")
+    
+    for id in ids:
+
+        session_d.execute(f"UPDATE takeaway SET department  = '{newName}' WHERE takeaway_id = {id[0]}")
+
+        change_keyspace(session_v, valdas_dbvs['above_keyspace'])
+        data = session_v.execute(f"SELECT COUNT(*) FROM takeaway WHERE takeaway_id = {id[0]}")
+
+        if data[0].count == 0:
+            change_keyspace(session_v, valdas_dbvs['below_keyspace'])
+
+        
+        session_v.execute(f"UPDATE takeaway SET department = '{newName}' WHERE takeaway_id = {id[0]}")
+
+def delete_book_copy_in_keyspace(session_d, session_v, copy_id, key_space):
+    change_keyspace(session_d, dominykas_dbvs[key_space])
+    change_keyspace(session_v, valdas_dbvs[key_space])
+
+    ids = session_d.execute(f"SELECT takeaway_id FROM takeaway WHERE copy_id = {copy_id} ALLOW FILTERING")
+    session_d.execute(f"DELETE FROM copy WHERE copy_id = {copy_id}")
+
+    for id in ids:
+        session_d.execute(f"DELETE FROM takeaway WHERE takeaway_id = {id[0]}")
+        session_v.execute(f"DELETE FROM takeaway WHERE takeaway_id = {id[0]}")
+
+def delete_book_copy(session_d, session_v, copy_id):
+    delete_book_copy_in_keyspace(session_d, session_v, copy_id, 'above_keyspace')
+    delete_book_copy_in_keyspace(session_d, session_v, copy_id, 'below_keyspace')
+
+def get_person_books_in_keyspace(session_d, session_v, perosonal_code, key_space):
+    change_keyspace(session_d, dominykas_dbvs[key_space])
+    books = []
+    define_keyspace_v(session_v, perosonal_code)
+    takeaways = session_v.execute(f"SELECT copy_id FROM takeaway WHERE  personal_code = {perosonal_code} ALLOW FILTERING")
+    for copy in takeaways:
+        book = session_d.execute(f"SELECT isbn FROM copy WHERE copy_id = {copy[0]}")
+        books.append(book[0][0])
+    return books
+
+def get_person_books(session_d, session_v, perosonal_code):
+    books = get_person_books_in_keyspace(session_d, session_v, perosonal_code, 'above_keyspace')
+    books = books + (get_person_books_in_keyspace(session_d, session_v, perosonal_code, 'below_keyspace'))
+    return books
+    
+    
 if __name__ == "__main__":
-    [cluster, session] = connectToServer('valdas', 'Valdas123456', '20.113.59.203')
-    [dominykasCluster, dominykasSession] = connectToServer('domrap', 'Password123*', '13.74.59.114')
+    [dominykasCluster, dominykasSession] = connet_to_server(dominykas_dbvs['user'], dominykas_dbvs['password'], dominykas_dbvs['ip_address'])
+    change_keyspace(dominykasSession, dominykas_dbvs['above_keyspace'])
 
-    change_keyspace(dominykasSession, dominykas_keyspaces[0])
+    [cluster, session] = connet_to_server(valdas_dbvs['user'], valdas_dbvs['password'], valdas_dbvs['ip_address'])
 
-    change_keyspace(session, my_keyspaces[0])
-
-    # test_run(session)
-
+    #change_keyspace(session, valdas_dbvs['above_keyspace'])
+    #sync_takeaways(dominykasSession, session, 'below_keyspace')
+    #test_run(session)
     # change_keyspace(dominykasSession, dominykas_keyspaces[1])
 
     # test_run(session)
@@ -147,3 +238,13 @@ if __name__ == "__main__":
 
     # Deleting book and syncing with recommendations (Select, Delete, Alter Drop)
     # remove_book(9789955139867, session, dominykasSession)
+
+    # Insert takeaway
+    #takeAwayData = { 'id':1222, 'copy_id': 3, 'personalCode': 39909036666, 'department': "Vilnius", 'return_date': "2022-01-12", 'take_date': "2022-01-12"}
+    #insert_takeaway(dominykasSession, session, takeAwayData)
+    # Update libary name
+    #update_libarary_departmentName(dominykasSession, session, 'Klaipeda', 'CCCCCCC')
+    # Delete book copy
+    #delete_book_copy(dominykasSession, session, 5)
+    # Get books by person id
+    #print(get_person_books(dominykasSession, session, 39909036666))
