@@ -93,9 +93,34 @@ def create_books_sync_recomendations(session_v, session_d):
             
             recommended = session_v.execute(f'SELECT * FROM recommendation WHERE {sim_book.name}={sim_book.isbn} ALLOW FILTERING')
             for recommend in recommended:
+                print(f"Adding recommendation to: {recommend.personal_code}")
                 session_v.execute(f"UPDATE recommendation SET {book['name']}={book['isbn']} WHERE personal_code={recommend.personal_code}")
 
+# Knygos pašalinimas ir sinchronizacija su rekomendacijomis
+def remove_book(isbn, session_v, session_d):
+    book = session_d.execute(f"SELECT * FROM book WHERE isbn='{isbn}'").one()
 
+    if book is not None:
+        column = session_v.execute(f"SELECT * from system_schema.columns WHERE table_name='recommendation' AND column_name='{book.name.lower()}' ALLOW FILTERING").one()
+        if column is not None:
+            session_v.execute(f"ALTER TABLE recommendation DROP {book.name.lower()} ")
+            test_col_remove(book.name, session_v)
+
+    session_d.execute(f"DELETE FROM book WHERE isbn='{isbn}' IF EXISTS")
+
+    test_remove(isbn, session_d)
+
+def test_remove(isbn, session_d):
+    book = session_d.execute(f"SELECT * FROM book WHERE isbn='{isbn}'").one()
+
+    print("removed book")
+    print(book)
+
+def test_col_remove(name, session_v):
+    column = session_v.execute(f"SELECT * from system_schema.columns WHERE table_name='recommendation' AND column_name='{name.lower()}' ALLOW FILTERING").one()
+
+    print("removed column")
+    print(column)
 
 if __name__ == "__main__":
     [cluster, session] = connectToServer('valdas', 'Valdas123456', '20.113.59.203')
@@ -111,8 +136,14 @@ if __name__ == "__main__":
 
     # test_run(session)
 
-    #create_books_for_test(dominykasSession)
+    # Creating books if they dont exist
+    # create_books_for_test(dominykasSession)
 
+    # Getting recommended books for user (Select)
     # get_recommended_books(39909021111, session, dominykasSession)
 
-    #create_books_sync_recomendations(session, dominykasSession)
+    # Creating books and syncing them to recommendations (Insert,  Update, Alter Add)
+    # create_books_sync_recomendations(session, dominykasSession)
+
+    # Deleting book and syncing with recommendations (Select, Delete, Alter Drop)
+    # remove_book(9789955139867, session, dominykasSession)
