@@ -131,6 +131,20 @@ def add_active_col_membership(session_v):
 def activate_membership(taxcode: str, period : int, session_v):
     session_v.execute(f"UPDATE membership USING TTL {period} SET active='Yes' WHERE personal_code={taxcode}")
 
+    membership = session_v.execute(f"SELECT * FROM membership WHERE personal_code={taxcode}").one()
+
+    print(membership)
+
+    time.sleep(period)
+
+    membership = session_v.execute(f"SELECT * FROM membership WHERE personal_code={taxcode}").one()
+
+    print(membership)
+
+
+
+
+
 
 # -----------------------------------------------------------
 def get_all_rows_from_table (session, table):
