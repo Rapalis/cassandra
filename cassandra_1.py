@@ -122,6 +122,16 @@ def test_col_remove(name, session_v):
     print("removed column")
     print(column)
 
+def add_active_col_membership(session_v):
+    column = session_v.execute(f"SELECT * from system_schema.columns WHERE table_name='membership' AND column_name='active' ALLOW FILTERING").one()
+    if column is None:
+        session_v.execute(f"ALTER TABLE membership ADD active text")
+
+
+def activate_membership(taxcode: str, period : int, session_v):
+    session_v.execute(f"UPDATE membership USING TTL {period} SET active='Yes' WHERE personal_code={taxcode}")
+
+
 # -----------------------------------------------------------
 def get_all_rows_from_table (session, table):
     data = session.execute(f"SELECT * FROM {table}")
@@ -219,8 +229,7 @@ if __name__ == "__main__":
     change_keyspace(dominykasSession, dominykas_dbvs['above_keyspace'])
 
     [cluster, session] = connet_to_server(valdas_dbvs['user'], valdas_dbvs['password'], valdas_dbvs['ip_address'])
-
-    #change_keyspace(session, valdas_dbvs['above_keyspace'])
+    change_keyspace(session, valdas_dbvs['above_keyspace'])
     #sync_takeaways(dominykasSession, session, 'below_keyspace')
     #test_run(session)
     # change_keyspace(dominykasSession, dominykas_keyspaces[1])
@@ -238,6 +247,15 @@ if __name__ == "__main__":
 
     # Deleting book and syncing with recommendations (Select, Delete, Alter Drop)
     # remove_book(9789955139867, session, dominykasSession)
+
+    # Make Timed membership
+    activate_membership('39909027777', 10, session)
+    # Add activation columns
+    # add_active_col_membership(session)
+    # change_keyspace(session, valdas_dbvs['below_keyspace'])
+    # add_active_col_membership(session)
+
+    # -----------------------------------------------------------
 
     # Insert takeaway
     #takeAwayData = { 'id':1222, 'copy_id': 3, 'personalCode': 39909036666, 'department': "Vilnius", 'return_date': "2022-01-12", 'take_date': "2022-01-12"}
